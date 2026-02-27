@@ -14,6 +14,12 @@ The platform runs two separate interfaces:
 - **Admin Console** — HR administrators upload documents, manage the knowledge base, trigger re-indexing, and monitor system health — no code required.
 
 ---
+<img width="1918" height="856" alt="Screenshot 2026-02-27 174647" src="https://github.com/user-attachments/assets/e21883c1-a4da-4ca2-94b1-7d4d57d62ff8" />
+<img width="1919" height="858" alt="Screenshot 2026-02-27 174719" src="https://github.com/user-attachments/assets/f93644b7-01e4-4cb5-bb63-27a3625be01f" />
+
+
+<img width="1844" height="866" alt="Screenshot 2026-02-27 174843" src="https://github.com/user-attachments/assets/e5b1821e-c64a-49f3-99a1-64e1d0d04174" />
+
 
 ## Architecture
 
