@@ -1,358 +1,288 @@
-# 🏢 NovaCorp HR AI Assistant
-### RAG-based Agentic HR Management System
+# Stafflyx HR AI Assistant
 
-> A fully local, production-grade HR AI assistant with vector search, multimodal knowledge retrieval, agentic orchestration, and a beautiful dual-interface Gradio UI — **no cloud APIs required**.
+**Intelligent HR Self-Service Platform — RAG-Powered, Locally Hosted**
 
----
-
-## 📋 Table of Contents
-1. [System Overview](#system-overview)
-2. [Architecture](#architecture)
-3. [Agentic Pipeline](#agentic-pipeline)
-4. [Quick Start](#quick-start)
-5. [Project Structure](#project-structure)
-6. [Knowledge Base](#knowledge-base)
-7. [Configuration](#configuration)
-8. [Features](#features)
-9. [Demo Accounts](#demo-accounts)
-10. [Extending the System](#extending-the-system)
+Stafflyx HR AI Assistant gives employees instant, personalized answers to HR questions by combining a FAISS vector search index of company documents with live employee data from MySQL, all processed through a local Ollama language model. The system runs entirely on-premises with no external API calls, keeping sensitive HR data within your infrastructure.
 
 ---
 
-## 🎯 System Overview
+## Overview
 
-NovaCorp HR AI is a **RAG (Retrieval-Augmented Generation) + Agentic** HR assistant with two interfaces:
+The platform runs two separate interfaces:
 
-| Interface | Audience | Port | Theme |
-|-----------|----------|------|-------|
-| **Admin Console** | HR Administrators | 7860 | Dark Blue |
-| **Employee Chat** | All Employees | 7861 | Light Blue |
-
-**Key capabilities:**
-- 🧠 **Local LLM only** (Ollama + Mistral-7B) — no cloud APIs, no data leaves your network
-- 📚 **ChromaDB vector search** — semantic retrieval over HR documents
-- 🗂️ **Multimodal KB** — PDFs, DOCX, Markdown, videos, images, links
-- 👤 **Personal HR data** — each employee sees their own leave, salary, and benefits
-- 🤖 **5-agent pipeline** — intent classification → retrieval → context building → generation → attribution
-- 📎 **Source citations** — every answer shows which documents it came from
-- 🔒 **Admin-only ingestion** — employees can never modify the knowledge base
+- **Employee Chat** — Employees log in with their ID and PIN and ask anything: leave balances, salary details, benefits coverage, performance review dates, bonus targets, company policies, or training resources. Every response includes citations showing which HR documents were used.
+- **Admin Console** — HR administrators upload documents, manage the knowledge base, trigger re-indexing, and monitor system health — no code required.
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    NovaCorp HR AI System                    │
-├─────────────────┬───────────────────────────────────────────┤
-│   Admin UI      │            Employee UI                    │
-│  (Port 7860)    │           (Port 7861)                     │
-│  ┌───────────┐  │  ┌──────────────────────────────────────┐ │
-│  │ Upload    │  │  │ Chat Window + Source Panel           │ │
-│  │ Re-index  │  │  │ Video/Link Preview + Confidence      │ │
-│  │ KB Status │  │  │ Suggested Questions                  │ │
-│  └─────┬─────┘  │  └──────────────┬───────────────────────┘ │
-├────────┼────────┴──────────────────┼────────────────────────┤
-│        ▼                           ▼                        │
-│   ┌──────────────────── Agentic Orchestrator ────────────┐  │
-│   │  Agent 1: Query Understanding (Intent Classification) │  │
-│   │  Agent 2: Retrieval (ChromaDB semantic search)        │  │
-│   │  Agent 3: Multimodal Context Builder                  │  │
-│   │  Agent 4: Answer Generation (Ollama / Mock)           │  │
-│   │  Agent 5: Source Attribution                          │  │
-│   └──────────────────────────────────────────────────────┘  │
-│                           │                                  │
-│              ┌────────────┼────────────────┐                 │
-│              ▼            ▼                ▼                 │
-│        ┌─────────┐  ┌──────────┐  ┌─────────────┐          │
-│        │ChromaDB │  │ Ollama   │  │Employee JSON│          │
-│        │(Vectors)│  │(Mistral) │  │(Personal DB)│          │
-│        └─────────┘  └──────────┘  └─────────────┘          │
-│              │                                               │
-│        ┌─────┴──────────────────────────────┐               │
-│        │         Knowledge Base (Folders)    │               │
-│        │  policies/ benefits/ training/      │               │
-│        │  images/   links/                   │               │
-│        └─────────────────────────────────────┘               │
-└─────────────────────────────────────────────────────────────┘
-```
+The backend is a five-agent pipeline:
+
+| Agent | Responsibility |
+|---|---|
+| Query Agent | Classifies intent, detects keywords, determines whether personal employee data is needed |
+| Retrieval Agent | Searches the FAISS vector index, applies keyword reranking, groups results by source type |
+| Context Builder | Assembles text, video metadata, and link chunks into a single LLM-ready context block |
+| Answer Agent | Sends context and employee data to Ollama, falls back to structured mock if Ollama is offline |
+| Source Agent | Builds deduplicated citations with relevance scores from retrieved chunks |
+
+All five agents run synchronously inside a worker thread, keeping the FastAPI event loop free.
 
 ---
 
-## 🤖 Agentic Pipeline
+## System Requirements
 
-Every employee query flows through 5 specialized agents:
-
-### Agent 1: Query Understanding Agent
-- Classifies intent: `leave | salary | incentives | benefits | training | performance | policy | general`
-- Detects if personal data is needed (first-person queries)
-- Suggests KB category filter for targeted retrieval
-
-### Agent 2: Retrieval Agent
-- Embeds query using `all-MiniLM-L6-v2` (local, CPU-compatible)
-- Queries ChromaDB with cosine similarity
-- Retrieves top-8 candidates with similarity scores
-
-### Agent 3: Multimodal Context Builder
-- Separates results by type: text docs | videos | images | links
-- Builds LLM context from text chunks
-- Appends structured media metadata for UI display
-
-### Agent 4: Answer Generation Agent
-- Calls Ollama (Mistral-7B) with system prompt + employee context + KB context
-- Falls back to structured mock responses if Ollama is offline
-- Includes personal employee data when relevant
-
-### Agent 5: Source Attribution Agent
-- Deduplicates sources by filename
-- Builds citations with relevance scores, icons, URLs, and excerpts
-- Returns structured source list for UI rendering
+| Requirement | Detail |
+|---|---|
+| Python | 3.10 or higher |
+| MySQL | 8.0 or higher |
+| RAM | 4 GB minimum. 8 GB recommended when running Ollama |
+| OS | Windows 10/11, macOS, or Linux |
+| Ollama | Optional. Required for full AI responses. Without it, the system uses structured mock responses |
 
 ---
 
-## ⚡ Quick Start
+## Installation
 
-### Prerequisites
-- Python 3.10+
-- pip
+### Step 1 — Install Python Dependencies
 
-### 1. Clone / Download
-```bash
-cd hr_rag_agent
-```
-
-### 2. Install Dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. (Optional but Recommended) Enable Full AI
+Packages installed:
+
+- `faiss-cpu` — vector search index
+- `sentence-transformers` — local embedding model (all-MiniLM-L6-v2)
+- `fastapi` and `uvicorn` — web framework and server
+- `httpx` — HTTP client for Ollama communication
+- `pypdf` and `python-docx` — document parsing
+- `mysql-connector-python` — MySQL database connectivity
+
+---
+
+### Step 2 — Configure MySQL
+
+Open MySQL Workbench or any MySQL client as root and run the following once:
+
+```sql
+CREATE DATABASE stafflyx_hr;
+
+DROP USER IF EXISTS 'stafflyx_user'@'localhost';
+DROP USER IF EXISTS 'stafflyx_user'@'127.0.0.1';
+DROP USER IF EXISTS 'stafflyx_user'@'%';
+
+CREATE USER 'stafflyx_user'@'%' IDENTIFIED WITH mysql_native_password BY 'stafflyx_pass';
+GRANT ALL PRIVILEGES ON stafflyx_hr.* TO 'stafflyx_user'@'%';
+FLUSH PRIVILEGES;
+```
+
+> **Important:** The user must be created with `mysql_native_password`. MySQL 8 defaults to `caching_sha2_password`, which causes the Python connector to hang silently on Windows.
+
+---
+
+### Step 3 — Seed the Database
+
 ```bash
-# Install Ollama from https://ollama.com
+python -m database.setup_mysql
+```
+
+This creates all tables and inserts the five demo employees. On success, the script prints a credentials table confirming all records were inserted.
+
+---
+
+### Step 4 — Index the Knowledge Base
+
+```bash
+python -m scripts.setup_and_seed
+```
+
+This checks dependencies, verifies Ollama availability, creates required directories, and runs a full FAISS index of all documents in the `knowledge_base` folder. Safe to re-run at any time.
+
+---
+
+### Step 5 — Install Ollama (Optional but Recommended)
+
+Without Ollama, the system returns structured mock responses. To enable full AI responses:
+
+1. Download and install Ollama from [https://ollama.com](https://ollama.com)
+2. Pull the model:
+```bash
 ollama pull mistral
+```
+3. Start the server:
+```bash
 ollama serve
 ```
-> Without Ollama, the system runs in **mock mode** — structured, helpful demo responses based on the query type and employee data. Perfect for client demos.
 
-### 4. Initialize the System
+---
+
+## Running the Application
+
+### Launch Both Interfaces (Recommended)
+
 ```bash
-python scripts/setup_and_seed.py
+python -m scripts.launch_all
 ```
-This will:
-- Verify dependencies
-- Create all directories
-- Index all seed knowledge base documents into ChromaDB
 
-### 5. Launch
+This starts both servers as separate subprocesses with automatic restart on crash.
+
+| Interface | URL |
+|---|---|
+| Employee Chat | http://localhost:7861 |
+| Admin Console | http://localhost:7860 |
+
+### Launch Individually
+
 ```bash
-# Launch both interfaces:
-python scripts/launch_all.py
+# Admin console
+python -m uvicorn frontend.admin_ui.admin_app:app --port 7860
 
-# Or separately:
-python frontend/admin_ui/admin_app.py    # → http://localhost:7860
-python frontend/user_ui/user_app.py     # → http://localhost:7861
+# Employee chat
+python -m uvicorn frontend.user_ui.user_app:app --port 7861
 ```
 
 ---
 
-## 📁 Project Structure
+## Demo Credentials
 
-```
-hr_rag_agent/
-├── config/
-│   ├── settings.py              # All system configuration
-│   └── __init__.py
-│
-├── backend/
-│   ├── ingestion/
-│   │   └── pipeline.py          # File upload, KB scanning, index orchestration
-│   ├── chunking/
-│   │   └── chunker.py           # Hybrid chunker: PDF, DOCX, MD, video, image, links
-│   ├── retrieval/
-│   │   └── retriever.py         # ChromaDB query + reranking + grouping
-│   ├── agents/
-│   │   ├── orchestrator.py      # Main 5-agent pipeline controller
-│   │   ├── query_agent.py       # Intent classification agent
-│   │   ├── source_agent.py      # Source attribution agent
-│   │   └── employee_service.py  # Employee auth + personal data
-│   ├── llm/
-│   │   └── ollama_client.py     # Ollama wrapper + prompt templates + mock fallback
-│   └── vector_db/
-│       └── chroma_store.py      # ChromaDB manager with SentenceTransformer embeddings
-│
-├── frontend/
-│   ├── admin_ui/
-│   │   └── admin_app.py         # Gradio Admin Console (dark blue)
-│   └── user_ui/
-│       └── user_app.py          # Gradio Employee Chat (light blue)
-│
-├── knowledge_base/              # Folder-based HR content (admin uploads here)
-│   ├── policies/
-│   │   ├── leave_policy.md
-│   │   ├── compensation_policy.md
-│   │   ├── code_of_conduct.md
-│   │   └── performance_policy.md
-│   ├── benefits/
-│   │   └── benefits_guide.md
-│   ├── training/
-│   │   └── training_videos.json
-│   ├── images/                  # Upload org charts, flow diagrams, etc.
-│   └── links/
-│       └── hr_links.json
-│
-├── data/
-│   ├── employee_data/
-│   │   └── employees.json       # Mock employee personal data
-│   └── chroma_db/               # ChromaDB persistent store (auto-created)
-│
-├── scripts/
-│   ├── setup_and_seed.py        # One-time initialization
-│   ├── launch_all.py            # Launch both UIs concurrently
-│   └── reindex.py               # CLI re-indexing tool
-│
-├── requirements.txt
-└── README.md
-```
+### Employee Login — http://localhost:7861
 
----
-
-## 📚 Knowledge Base
-
-### Adding Content (Admin)
-1. Open Admin Console → http://localhost:7860
-2. Login with admin credentials
-3. Go to **Upload Content** tab
-4. Select category, upload file(s)
-5. Files are automatically chunked and indexed
-
-### Supported Formats
-
-| Type | Extensions | Chunking Strategy |
-|------|-----------|-------------------|
-| Documents | `.pdf`, `.docx`, `.md`, `.txt` | Semantic (sentence-aware, 600 token target, 13% overlap) |
-| Videos | `.mp4`, `.avi`, `.mov` | Metadata + topic chunking (1 chunk per video) |
-| Images | `.png`, `.jpg`, `.jpeg` | Caption/metadata chunking |
-| Links | `.json` | URL metadata (1 chunk per link) |
-
-### Chunk Metadata Schema
-Every chunk stored in ChromaDB has:
-```json
-{
-  "source_type": "pdf | docx | markdown | video | image | link",
-  "file_name": "leave_policy.md",
-  "file_path": "/path/to/file",
-  "category": "policies | benefits | training | images | links",
-  "admin_uploaded": true,
-  "timestamp": "2024-01-15T10:30:00",
-  "url": "https://...",
-  "chunk_index": 3
-}
-```
-
----
-
-## ⚙️ Configuration
-
-All settings in `config/settings.py`:
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `OLLAMA_MODEL` | `mistral` | Local LLM model name |
-| `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | SentenceTransformers model |
-| `CHUNK_SIZE` | `600` | Target chunk size in tokens |
-| `CHUNK_OVERLAP` | `80` | Overlap between chunks (~13%) |
-| `RETRIEVAL_TOP_K` | `8` | Candidates fetched from ChromaDB |
-| `RERANK_TOP_N` | `4` | Results after reranking |
-| `SIMILARITY_THRESHOLD` | `0.25` | Min cosine similarity to include |
-| `ADMIN_USERNAME` | `admin` | Admin login username |
-| `ADMIN_PASSWORD` | `novacorp@admin2024` | Admin login password |
-
-Override with environment variables:
-```bash
-export OLLAMA_MODEL=llama3
-export ADMIN_PASSWORD=my_secure_password
-```
-
-### Switching LLM Models
-```bash
-# Mistral (default, recommended for HR)
-ollama pull mistral
-
-# Llama 3 8B (strong reasoning)
-ollama pull llama3
-
-# Phi-3 Mini (fastest, lightweight)
-ollama pull phi3
-
-# Gemma 7B
-ollama pull gemma:7b
-```
-Then set `OLLAMA_MODEL` in `config/settings.py` or via environment variable.
-
----
-
-## 👤 Demo Accounts
-
-### Admin
-| Field | Value |
-|-------|-------|
-| Username | `admin` |
-| Password | `novacorp@admin2024` |
-
-### Employees
 | Employee ID | PIN | Name | Department |
-|-------------|-----|------|------------|
-| EMP001 | 1234 | Alice Johnson | Engineering |
-| EMP002 | 5678 | Brian Martinez | Marketing |
-| EMP003 | 9012 | Carol White | HR |
+|---|---|---|---|
+| EMP001 | 1234 | Sarah Mitchell | Product |
+| EMP002 | 5678 | Daniel Reyes | Engineering |
+| EMP003 | 9012 | Priya Shah | Engineering |
+| EMP004 | 3456 | Marcus Thompson | Human Resources |
+| EMP005 | 7890 | Aisha Patel | Finance |
+
+### Admin Login — http://localhost:7860
+
+| Field | Value |
+|---|---|
+| Username | admin |
+| Password | stafflyx@admin2024 |
+
+Admin credentials can be changed by setting the `ADMIN_USERNAME` and `ADMIN_PASSWORD` environment variables before starting the server.
 
 ---
 
-## 🔧 Extending the System
+## Configuration
 
-### Add a New Document Type
-1. Add the extension to `SUPPORTED_*_TYPES` in `config/settings.py`
-2. Add a chunker function in `backend/chunking/chunker.py`
-3. Add dispatch case in `chunk_file()` dispatcher
+All configuration is in `config/settings.py`. Override any value with environment variables:
 
-### Add a New Intent
-1. Add pattern list to `INTENT_PATTERNS` in `backend/agents/query_agent.py`
-2. Add category hint to `CATEGORY_HINT`
-3. Add mock response branch in `backend/llm/ollama_client.py`
+| Variable | Default | Description |
+|---|---|---|
+| `MYSQL_HOST` | `127.0.0.1` | MySQL server address |
+| `MYSQL_PORT` | `3306` | MySQL port |
+| `MYSQL_USER` | `stafflyx_user` | Database user |
+| `MYSQL_PASSWORD` | `stafflyx_pass` | Database password |
+| `MYSQL_DB` | `stafflyx_hr` | Database name |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL |
+| `OLLAMA_MODEL` | `mistral` | Model name |
+| `ADMIN_USERNAME` | `admin` | Admin console username |
+| `ADMIN_PASSWORD` | `stafflyx@admin2024` | Admin console password |
 
-### Add More Employees
-Edit `data/employee_data/employees.json` following the existing schema.
+---
 
-### Use a Different Embedding Model
-Change `EMBEDDING_MODEL` in `config/settings.py`. Reset ChromaDB after:
+## Project Structure
+
+```
+stafflyx_hr_ai/
+├── backend/
+│   ├── agents/          # Five-agent pipeline: orchestrator, query, employee service, source, LLM
+│   ├── chunking/        # Hybrid chunker for PDF, DOCX, Markdown, video, images, JSON links
+│   ├── ingestion/       # Knowledge base indexing pipeline and file upload handling
+│   ├── retrieval/       # FAISS query, keyword reranking, source grouping
+│   ├── vector_db/       # FAISS vector store with persistence, upsert, and stats
+│   └── llm/             # Ollama client with prompt templates and structured mock fallback
+├── config/
+│   └── settings.py      # All configuration values and environment variable overrides
+├── database/
+│   └── setup_mysql.py   # MySQL schema creation and demo data seeder
+├── frontend/
+│   ├── admin_ui/        # Admin console FastAPI app (port 7860)
+│   └── user_ui/         # Employee chat FastAPI app (port 7861)
+├── knowledge_base/
+│   ├── policies/        # HR policy documents
+│   ├── benefits/        # Benefits documentation
+│   ├── training/        # Training videos and materials
+│   ├── images/          # HR visual resources
+│   └── links/           # External HR resource links (JSON)
+├── data/
+│   ├── faiss_db/        # FAISS index and metadata (auto-generated)
+│   └── employee_data/   # Fallback JSON employee data if MySQL is unavailable
+├── scripts/
+│   ├── launch_all.py    # Starts both servers with auto-restart
+│   ├── reindex.py       # CLI re-indexing tool
+│   └── setup_and_seed.py # First-time setup script
+└── requirements.txt
+```
+
+---
+
+## Knowledge Base Management
+
+The admin console at `http://localhost:7860` provides a UI for all knowledge base operations.
+
+### CLI Re-indexing
+
+Incremental update:
 ```bash
-python scripts/reindex.py --reset
+python -m scripts.reindex
 ```
 
-### Enable Cross-Encoder Reranking
-In `backend/retrieval/retriever.py`, replace the keyword-boost reranker in `rerank()` with:
-```python
-from sentence_transformers import CrossEncoder
-cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
-scores = cross_encoder.predict([(query, chunk["text"]) for chunk in results])
+Full reset and re-index:
+```bash
+python -m scripts.reindex --reset
 ```
 
----
+### Supported File Types
 
-## 🛡️ Security Notes
-
-- Admin and employee passwords are stored in config (plaintext for demo)
-- For production: use hashed passwords + environment variables
-- ChromaDB data is stored locally — no external network calls
-- Ollama runs fully locally — queries never leave the machine
-
----
-
-## 📞 Support
-
-For system issues, contact your IT Administrator.
-For HR questions, use the Employee Chat interface or contact hr@novacorp.com
+| Type | Extensions |
+|---|---|
+| Documents | `.pdf`, `.docx`, `.md`, `.txt` |
+| Videos | `.mp4`, `.avi`, `.mov`, `.mkv` (metadata indexed) |
+| Images | `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp` |
+| Links | `.json` (array of URL entries with title and description) |
 
 ---
 
-*NovaCorp HR AI Assistant v1.0 | Built with ChromaDB + SentenceTransformers + Gradio + Ollama*
+## Troubleshooting
+
+**MySQL connection hangs silently**
+The user must be created with `mysql_native_password`. MySQL 8 defaults to `caching_sha2_password`, which causes the Python connector to hang on Windows. Re-run the Step 2 SQL with the DROP/CREATE sequence to fix this.
+
+**Access denied when connecting via 127.0.0.1**
+MySQL treats `localhost` and `127.0.0.1` as different hosts. The grant uses `'%'` to cover both. If you still see access denied, verify the user was dropped and recreated with the full sequence in Step 2 and that `FLUSH PRIVILEGES` was run.
+
+**Ollama responses are slow or time out**
+The default timeout is 120 seconds. For slower machines, increase `OLLAMA_TIMEOUT` in `config/settings.py`. The mistral model requires approximately 5 GB of RAM. On lower-spec machines, try `phi3:mini` instead.
+
+**FAISS index is empty after setup**
+Check that `knowledge_base/policies`, `knowledge_base/benefits`, or `knowledge_base/training` contain files. The setup script prints a per-file chunk count — a count of zero means the file type is unsupported or the file is empty.
+
+**Admin upload returns indexing failed**
+The uploaded file type is likely unsupported, or a parsing dependency is missing. Verify `pypdf` is installed for PDF files and `python-docx` for DOCX files.
+
+---
+
+## Tech Stack
+
+- **Vector Search** — FAISS (faiss-cpu)
+- **Embeddings** — sentence-transformers (all-MiniLM-L6-v2, runs locally)
+- **LLM** — Ollama (mistral, runs locally)
+- **Database** — MySQL 8
+- **Web Framework** — FastAPI + Uvicorn
+- **Document Parsing** — pypdf, python-docx
+
+---
+
+## License
+
+Internal use only. Not for public distribution.
+
+---
+
+*Stafflyx HR AI Assistant — Version 2.0*
