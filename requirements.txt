@@ -1,4 +1,3 @@
-# NovaCorp HR AI Assistant — Python Dependencies
 # Install with: pip install -r requirements.txt
 
 # ── Vector Database ──────────────────────────────────────────────────────────
